@@ -71,6 +71,41 @@ ZS-042/MH is a family of clone boards rather than one controlled design. Many ve
 
 ## Build and VS Code
 
+### Install Arduino CLI and BBC micro:bit V2 board support
+
+This project was set up on Windows by installing [Arduino IDE 2](https://www.arduino.cc/en/software) and then installing Sandeep Mistry's nRF5 board package. Arduino IDE 2 uses Arduino CLI internally and installs board packages in the same Arduino data directory, but its bundled CLI is not necessarily available as an `arduino-cli` command on `PATH`. If the command is unavailable, install the [standalone Arduino CLI](https://arduino.github.io/arduino-cli/latest/installation/) and add its directory to `PATH`, or update this workspace's configured CLI path.
+
+To install the board package through Arduino IDE 2:
+
+1. Open **File > Preferences** and add this URL under **Additional Boards Manager URLs**:
+
+    ```text
+    https://sandeepmistry.github.io/arduino-nRF5/package_nRF5_boards_index.json
+    ```
+
+2. Open **Tools > Board > Boards Manager**.
+3. Search for **Nordic Semiconductor nRF5 Boards** by Sandeep Mistry and install it.
+4. Select **BBC micro:bit V2** as the board.
+
+The equivalent standalone CLI setup is:
+
+```powershell
+arduino-cli config init
+arduino-cli config add board_manager.additional_urls https://sandeepmistry.github.io/arduino-nRF5/package_nRF5_boards_index.json
+arduino-cli core update-index
+arduino-cli core install sandeepmistry:nRF5
+```
+
+If an Arduino CLI configuration already exists, `config init` reports that fact and leaves it in place. Verify both installations with:
+
+```powershell
+arduino-cli version
+arduino-cli core list
+arduino-cli board listall "BBC micro:bit V2"
+```
+
+The board must appear with FQBN `sandeepmistry:nRF5:BBCmicrobitV2`. See the [Sandeep Mistry nRF5 core installation instructions](https://github.com/sandeepmistry/arduino-nRF5#installing) for upstream details.
+
 Open `ArduinoBBCMicroBitV2RTC.code-workspace`. Its recommended extensions provide C/C++ IntelliSense, Arduino project integration, and a serial monitor. `Ctrl+Shift+B` runs the warning-enabled compile task.
 
 Compile from a terminal with:
@@ -205,6 +240,9 @@ An Arduino CLI compile is the authoritative static build check for this `.ino` s
 
 ## References
 
+- [Arduino software downloads (Arduino IDE 2)](https://www.arduino.cc/en/software)
+- [Arduino CLI installation](https://arduino.github.io/arduino-cli/latest/installation/)
+- [Sandeep Mistry Arduino nRF5 core and board installation](https://github.com/sandeepmistry/arduino-nRF5#installing)
 - [BBC micro:bit edge connector and external I2C pins](https://tech.microbit.org/hardware/edgeconnector/)
 - [BBC micro:bit V2 schematics and pin map](https://tech.microbit.org/hardware/schematic/)
 - [BBC micro:bit power-supply guidance](https://tech.microbit.org/hardware/powersupply/)
