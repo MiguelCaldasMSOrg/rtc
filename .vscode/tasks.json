@@ -1,0 +1,46 @@
+{
+  "tasks": [
+    {
+      "args": [
+        "compile",
+        "--fqbn",
+        "sandeepmistry:nRF5:BBCmicrobitV2",
+        "--warnings",
+        "all",
+        "."
+      ],
+      "command": "arduino-cli",
+      "group": {
+        "isDefault": true,
+        "kind": "build"
+      },
+      "label": "Arduino: Compile",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [
+        "$gcc"
+      ],
+      "type": "process"
+    },
+    {
+      "args": [
+        "compile",
+        "--fqbn",
+        "sandeepmistry:nRF5:BBCmicrobitV2",
+        "--build-path",
+        ".build",
+        "--only-compilation-database",
+        "."
+      ],
+      "command": "arduino-cli",
+      "label": "Arduino: Refresh Compilation Database",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "type": "process"
+    }
+  ],
+  "version": "2.0.0"
+}

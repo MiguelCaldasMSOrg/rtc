@@ -5,6 +5,13 @@
     }
   ],
   "settings": {
-    "C_Cpp.default.compileCommands": "${workspaceFolder}/.build/compile_commands.json"
+    "C_Cpp.default.compileCommands": "${workspaceFolder}/.build/compile_commands.json",
+    "arduino.commandPath": "arduino-cli.exe",
+    "arduino.disableIntelliSenseAutoGen": false,
+    "arduino.path": "C:\\Program Files\\Arduino CLI",
+    "arduino.useArduinoCli": true,
+    "files.associations": {
+      "*.ino": "cpp"
+    }
   }
 }

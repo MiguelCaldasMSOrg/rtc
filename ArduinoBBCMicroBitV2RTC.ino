@@ -2,10 +2,10 @@
  * DS3231 + AT24C32 (ZS-042 / "MH" module) - full console for Arduino
  * Library-free: only Wire.h, direct register access.
  *
- * Wiring (Uno/Nano):  VCC->5V  GND->GND  SDA->A4  SCL->A5
- *                     SQW -> D2   (optional, needed for alarm interrupts)
- *        Mega: SDA 20 / SCL 21, SQW -> D2 or D3
- *        Uno R4 / Leonardo: dedicated SDA/SCL pins, SQW -> D2
+ * Wiring (BBC micro:bit V2): VCC->3V  GND->GND  SDA->P20  SCL->P19
+ *                            SQW/INT->P2 (needed for alarm interrupts)
+ *                            32K not connected
+ * Wire by the module's silkscreen labels; ZS-042 clone layouts vary.
  *
  * Serial monitor: 9600 baud, line ending = Newline
  *
@@ -37,9 +37,10 @@
  * MISC
  *   S    I2C bus scan       H    help
  *
- * HARDWARE NOTE: this module has a 1N4148 + 200R ("201") battery charging
- * circuit. With a non-rechargeable CR2032 fitted, remove the 201 resistor
- * (or the diode) before running the board from 5 V.
+ * HARDWARE NOTE: power this project from 3 V, not 5 V. Many ZS-042 clones
+ * have pull-ups to VCC and a diode/resistor coin-cell charging path. A CR2032
+ * is not rechargeable: inspect the exact board and ensure that it cannot
+ * charge the cell. See README.md for wiring, alarm, and battery details.
  */
 
 #include <Wire.h>
@@ -132,13 +133,17 @@ bool rtcRead(uint8_t reg, uint8_t *buf, uint8_t len) {
   return true;
 }
 
-uint8_t rtcReg(uint8_t reg) {
-  uint8_t v = 0;
-  rtcRead(reg, &v, 1);
-  return v;
-}
 bool rtcSetReg(uint8_t reg, uint8_t v) {
   return rtcWrite(reg, &v, 1);
+}
+
+bool rtcUpdateReg(uint8_t reg, uint8_t clearMask, uint8_t setMask) {
+  uint8_t v;
+  if (!rtcRead(reg, &v, 1)) {
+    return false;
+  }
+  v = (v & ~clearMask) | setMask;
+  return rtcSetReg(reg, v);
 }
 
 /* ================= day-of-week (Sakamoto), 1 = Sunday ================= */
@@ -180,8 +185,7 @@ bool setTime(uint16_t year, uint8_t mon, uint8_t day, uint8_t hh, uint8_t mm, ui
   if (!rtcWrite(REG_TIME, b, 7)) {
     return false;
   }
-  rtcSetReg(REG_STATUS, rtcReg(REG_STATUS) & ~STAT_OSF);  // clear stop flag
-  return true;
+  return rtcUpdateReg(REG_STATUS, STAT_OSF, 0);  // clear stop flag
 }
 
 bool getTime(Tm &t) {
@@ -254,12 +258,10 @@ bool setAlarm1(A1Mode mode, uint8_t day, uint8_t hh, uint8_t mm, uint8_t ss) {
     return false;
   }
 
-  uint8_t c = rtcReg(REG_CONTROL);
-  c |= CTRL_INTCN | CTRL_A1IE;  // interrupt mode, enable A1
-  if (!rtcSetReg(REG_CONTROL, c)) {
+  if (!rtcUpdateReg(REG_CONTROL, 0, CTRL_INTCN | CTRL_A1IE)) {
     return false;
   }
-  return rtcSetReg(REG_STATUS, rtcReg(REG_STATUS) & ~STAT_A1F);
+  return rtcUpdateReg(REG_STATUS, STAT_A1F, 0);
 }
 
 bool setAlarm2(A2Mode mode, uint8_t day, uint8_t hh, uint8_t mm) {
@@ -284,36 +286,43 @@ bool setAlarm2(A2Mode mode, uint8_t day, uint8_t hh, uint8_t mm) {
     return false;
   }
 
-  uint8_t c = rtcReg(REG_CONTROL);
-  c |= CTRL_INTCN | CTRL_A2IE;
-  if (!rtcSetReg(REG_CONTROL, c)) {
+  if (!rtcUpdateReg(REG_CONTROL, 0, CTRL_INTCN | CTRL_A2IE)) {
     return false;
   }
-  return rtcSetReg(REG_STATUS, rtcReg(REG_STATUS) & ~STAT_A2F);
+  return rtcUpdateReg(REG_STATUS, STAT_A2F, 0);
 }
 
 bool disableAlarm(uint8_t n) {
-  uint8_t c = rtcReg(REG_CONTROL);
-  c &= (n == 1) ? ~CTRL_A1IE : ~CTRL_A2IE;
-  if (!rtcSetReg(REG_CONTROL, c)) {
+  if (n != 1 && n != 2) {
     return false;
   }
-  return rtcSetReg(REG_STATUS, rtcReg(REG_STATUS) & ((n == 1) ? ~STAT_A1F : ~STAT_A2F));
+  uint8_t enableBit = (n == 1) ? CTRL_A1IE : CTRL_A2IE;
+  uint8_t flagBit = (n == 1) ? STAT_A1F : STAT_A2F;
+  if (!rtcUpdateReg(REG_CONTROL, enableBit, 0)) {
+    return false;
+  }
+  return rtcUpdateReg(REG_STATUS, flagBit, 0);
 }
 
-// Returns which alarms fired (bit0 = A1, bit1 = A2) and clears their flags.
-uint8_t checkAndClearAlarms() {
-  uint8_t st = rtcReg(REG_STATUS);
-  uint8_t fired = st & (STAT_A1F | STAT_A2F);
-  if (fired) {
-    rtcSetReg(REG_STATUS, st & ~(STAT_A1F | STAT_A2F));
+// Reports which alarms fired (bit0 = A1, bit1 = A2) and clears their flags.
+bool checkAndClearAlarms(uint8_t &fired) {
+  uint8_t st;
+  if (!rtcRead(REG_STATUS, &st, 1)) {
+    return false;
   }
-  return fired;
+  fired = st & (STAT_A1F | STAT_A2F);
+  if (fired) {
+    return rtcSetReg(REG_STATUS, st & ~fired);
+  }
+  return true;
 }
 
 // rate: 0 = alarm/interrupt mode, else 1, 1024, 4096 or 8192 Hz square wave
 bool setSquareWave(uint16_t rate) {
-  uint8_t c = rtcReg(REG_CONTROL);
+  uint8_t c;
+  if (!rtcRead(REG_CONTROL, &c, 1)) {
+    return false;
+  }
   c &= ~(CTRL_RS1 | CTRL_RS2);
   switch (rate) {
     case 0:
@@ -407,6 +416,9 @@ bool eepromRead(uint16_t addr, uint8_t *data, uint16_t len) {
 }
 
 bool eepromFill(uint16_t addr, uint16_t len, uint8_t val) {
+  if ((uint32_t)addr + len > EEPROM_SIZE) {
+    return false;
+  }
   uint8_t buf[16];
   memset(buf, val, sizeof(buf));
   while (len) {
@@ -453,10 +465,12 @@ void printTime() {
 }
 
 void printAlarmStatus() {
-  uint8_t c = rtcReg(REG_CONTROL), st = rtcReg(REG_STATUS);
+  uint8_t c, st;
   uint8_t a1[4], a2[3];
-  rtcRead(REG_A1, a1, 4);
-  rtcRead(REG_A2, a2, 3);
+  if (!rtcRead(REG_CONTROL, &c, 1) || !rtcRead(REG_STATUS, &st, 1) || !rtcRead(REG_A1, a1, 4) || !rtcRead(REG_A2, a2, 3)) {
+    Serial.println(F("Alarm status read failed."));
+    return;
+  }
 
   Serial.print(F("CONTROL=0x"));
   Serial.print(c, HEX);
@@ -594,13 +608,24 @@ const char *skipSpaces(const char *p) {
   return p;
 }
 
+bool parseLongToken(const char *&p, long &value) {
+  p = skipSpaces(p);
+  char *end;
+  value = strtol(p, &end, 0);
+  if (end == p || (*end && *end != ' ')) {
+    return false;
+  }
+  p = end;
+  return true;
+}
+
 void cmdSetTime(const char *arg) {
   int Y, Mo, D, h, m, s;
   if (sscanf(arg, " %d-%d-%d %d:%d:%d", &Y, &Mo, &D, &h, &m, &s) != 6) {
     Serial.println(F("Use: T YYYY-MM-DD HH:MM:SS"));
     return;
   }
-  if (!isValidDate(Y, Mo, D) || h > 23 || m > 59 || s > 59) {
+  if (!isValidDate(Y, Mo, D) || h < 0 || h > 23 || m < 0 || m > 59 || s < 0 || s > 59) {
     Serial.println(F("Out of range."));
     return;
   }
@@ -620,6 +645,7 @@ void cmdAlarm1(const char *arg) {
       Serial.println(F("A1 write failed."));
       return;
     }
+    alarmFlag = true;
     Serial.println(F("A1: fires once per second."));
     return;
   }
@@ -632,13 +658,14 @@ void cmdAlarm1(const char *arg) {
       Serial.println(F("A1 write failed."));
       return;
     }
+    alarmFlag = true;
     Serial.print(F("A1: every minute at second "));
     Serial.println(a);
     return;
   }
   if (sscanf(arg, "%d %d:%d:%d", &a, &b, &c, &d) == 4) {
     // DD HH:MM:SS
-    if (a < 1 || a > 31 || b > 23 || c > 59 || d > 59) {
+    if (a < 1 || a > 31 || b < 0 || b > 23 || c < 0 || c > 59 || d < 0 || d > 59) {
       Serial.println(F("Out of range."));
       return;
     }
@@ -646,6 +673,7 @@ void cmdAlarm1(const char *arg) {
       Serial.println(F("A1 write failed."));
       return;
     }
+    alarmFlag = true;
     Serial.print(F("A1: day "));
     Serial.print(a);
     Serial.print(F(" at "));
@@ -659,7 +687,7 @@ void cmdAlarm1(const char *arg) {
   }
   if (sscanf(arg, "%d:%d:%d", &b, &c, &d) == 3) {
     // HH:MM:SS
-    if (b > 23 || c > 59 || d > 59) {
+    if (b < 0 || b > 23 || c < 0 || c > 59 || d < 0 || d > 59) {
       Serial.println(F("Out of range."));
       return;
     }
@@ -667,6 +695,7 @@ void cmdAlarm1(const char *arg) {
       Serial.println(F("A1 write failed."));
       return;
     }
+    alarmFlag = true;
     Serial.print(F("A1: daily at "));
     print2(b);
     Serial.print(':');
@@ -687,12 +716,13 @@ void cmdAlarm2(const char *arg) {
       Serial.println(F("A2 write failed."));
       return;
     }
+    alarmFlag = true;
     Serial.println(F("A2: fires once per minute at :00."));
     return;
   }
   if (sscanf(arg, "%d %d:%d", &a, &b, &c) == 3) {
     // DD HH:MM
-    if (a < 1 || a > 31 || b > 23 || c > 59) {
+    if (a < 1 || a > 31 || b < 0 || b > 23 || c < 0 || c > 59) {
       Serial.println(F("Out of range."));
       return;
     }
@@ -700,6 +730,7 @@ void cmdAlarm2(const char *arg) {
       Serial.println(F("A2 write failed."));
       return;
     }
+    alarmFlag = true;
     Serial.print(F("A2: day "));
     Serial.print(a);
     Serial.print(F(" at "));
@@ -711,7 +742,7 @@ void cmdAlarm2(const char *arg) {
   }
   if (sscanf(arg, "%d:%d", &b, &c) == 2) {
     // HH:MM
-    if (b > 23 || c > 59) {
+    if (b < 0 || b > 23 || c < 0 || c > 59) {
       Serial.println(F("Out of range."));
       return;
     }
@@ -719,6 +750,7 @@ void cmdAlarm2(const char *arg) {
       Serial.println(F("A2 write failed."));
       return;
     }
+    alarmFlag = true;
     Serial.print(F("A2: daily at "));
     print2(b);
     Serial.print(':');
@@ -736,6 +768,7 @@ void cmdSquareWave(const char *arg) {
       Serial.println(F("Control write failed."));
       return;
     }
+    alarmFlag = true;
     Serial.println(F("INT/SQW back to alarm mode."));
     return;
   }
@@ -764,6 +797,10 @@ void cmdEepromWriteString(const char *arg) {
   }
   const char *text = skipSpaces(end);
   uint16_t len = strlen(text) + 1;  // include terminating NUL
+  if ((uint32_t)addr + len > EEPROM_SIZE) {
+    Serial.println(F("String and terminator exceed EEPROM bounds."));
+    return;
+  }
   if (eepromWrite((uint16_t)addr, (const uint8_t *)text, len)) {
     Serial.print(F("Wrote "));
     Serial.print(len);
@@ -821,8 +858,8 @@ void cmdEepromWriteBytes(const char *arg) {
 }
 
 void cmdEepromRead(const char *arg) {
-  int addr, len;
-  if (sscanf(arg, " %i %i", &addr, &len) != 2 || addr < 0 || len <= 0 || addr + len > (int)EEPROM_SIZE) {
+  long addr, len;
+  if (!parseLongToken(arg, addr) || !parseLongToken(arg, len) || *skipSpaces(arg) || addr < 0 || len <= 0 || addr >= EEPROM_SIZE || len > EEPROM_SIZE - addr) {
     Serial.println(F("Use: ER addr len   (addr+len <= 4096)"));
     return;
   }
@@ -830,8 +867,8 @@ void cmdEepromRead(const char *arg) {
 }
 
 void cmdEepromFill(const char *arg) {
-  int addr, len, val;
-  if (sscanf(arg, " %i %i %i", &addr, &len, &val) != 3 || addr < 0 || len <= 0 || addr + len > (int)EEPROM_SIZE) {
+  long addr, len, val;
+  if (!parseLongToken(arg, addr) || !parseLongToken(arg, len) || !parseLongToken(arg, val) || *skipSpaces(arg) || addr < 0 || len <= 0 || addr >= EEPROM_SIZE || len > EEPROM_SIZE - addr || val < 0 || val > 255) {
     Serial.println(F("Use: EF addr len value"));
     return;
   }
@@ -861,15 +898,19 @@ void setup() {
 
   pinMode(SQW_PIN, INPUT_PULLUP);  // INT/SQW is open-drain
   attachInterrupt(digitalPinToInterrupt(SQW_PIN), onAlarmISR, FALLING);
-  if (rtcReg(REG_STATUS) & (STAT_A1F | STAT_A2F)) {
-    alarmFlag = true;
-  }
-
   Serial.println(F("\nDS3231 + AT24C32 console"));
   scanBus();
 
-  if (rtcReg(REG_STATUS) & STAT_OSF) {
-    Serial.println(F("WARNING: oscillator stop flag set - time invalid, set it with T."));
+  uint8_t status;
+  if (!rtcRead(REG_STATUS, &status, 1)) {
+    Serial.println(F("WARNING: RTC status read failed."));
+  } else {
+    if (status & (STAT_A1F | STAT_A2F)) {
+      alarmFlag = true;
+    }
+    if (status & STAT_OSF) {
+      Serial.println(F("WARNING: oscillator stop flag set - time invalid, set it with T."));
+    }
   }
 
   printTime();
@@ -880,8 +921,12 @@ void loop() {
   /* --- report alarms --- */
   if (alarmFlag) {
     alarmFlag = false;
-    uint8_t fired = checkAndClearAlarms();
-    if (fired) {
+    uint8_t fired;
+    if (!checkAndClearAlarms(fired)) {
+      Serial.println(F("Alarm status read/clear failed; will retry."));
+      alarmFlag = true;
+      delay(10);
+    } else if (fired) {
       Serial.print(F("*** ALARM"));
       if (fired & STAT_A1F) {
         Serial.print(F(" 1"));
@@ -897,6 +942,7 @@ void loop() {
   /* --- console --- */
   static char line[72];
   static uint8_t n = 0;
+  static bool lineOverflow = false;
 
   while (Serial.available()) {
     char ch = Serial.read();
@@ -906,10 +952,18 @@ void loop() {
     if (ch != '\n') {
       if (n < sizeof(line) - 1) {
         line[n++] = ch;
+      } else {
+        lineOverflow = true;
       }
       continue;
     }
 
+    if (lineOverflow) {
+      n = 0;
+      lineOverflow = false;
+      Serial.println(F("Command too long; maximum is 71 characters."));
+      continue;
+    }
     line[n] = '\0';
     n = 0;
     const char *p = skipSpaces(line);
@@ -924,6 +978,7 @@ void loop() {
           Serial.println(F("Alarm disable failed."));
           continue;
         }
+        alarmFlag = true;
         Serial.print(F("Alarm "));
         Serial.print(which);
         Serial.println(F(" disabled."));
