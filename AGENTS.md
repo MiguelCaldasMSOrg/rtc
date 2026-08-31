@@ -32,4 +32,12 @@ Generate or refresh the VS Code compilation database with:
 arduino-cli compile --fqbn sandeepmistry:nRF5:BBCmicrobitV2 --build-path .build --only-compilation-database .
 ```
 
+Compile and upload to a USB-connected board, replacing `COM3` with the detected port:
+
+```powershell
+arduino-cli compile --fqbn sandeepmistry:nRF5:BBCmicrobitV2 --warnings all --upload --port COM3 .
+```
+
+The board recipe uploads through OpenOCD and the CMSIS-DAP USB endpoint. The COM port is the DAPLink CDC serial endpoint used to identify the connected board and access the sketch console; it is not a serial bootloader.
+
 Compilation is static validation only. It does not verify the attached DS3231, AT24C32, I2C wiring, interrupt pin selection, or other hardware behavior.

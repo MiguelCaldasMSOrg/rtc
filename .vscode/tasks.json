@@ -28,6 +28,28 @@
         "compile",
         "--fqbn",
         "sandeepmistry:nRF5:BBCmicrobitV2",
+        "--warnings",
+        "all",
+        "--upload",
+        "--port",
+        "${input:microbitPort}",
+        "."
+      ],
+      "command": "arduino-cli",
+      "label": "Arduino: Compile and Upload",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [
+        "$gcc"
+      ],
+      "type": "process"
+    },
+    {
+      "args": [
+        "compile",
+        "--fqbn",
+        "sandeepmistry:nRF5:BBCmicrobitV2",
         "--build-path",
         ".build",
         "--only-compilation-database",
@@ -40,6 +62,14 @@
       },
       "problemMatcher": [],
       "type": "process"
+    }
+  ],
+  "inputs": [
+    {
+      "default": "COM3",
+      "description": "BBC micro:bit V2 USB serial port (for example, COM3)",
+      "id": "microbitPort",
+      "type": "promptString"
     }
   ],
   "version": "2.0.0"

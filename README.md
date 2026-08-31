@@ -120,7 +120,25 @@ Refresh the compilation database used by IntelliSense with:
 arduino-cli compile --fqbn sandeepmistry:nRF5:BBCmicrobitV2 --build-path .build --only-compilation-database .
 ```
 
-The equivalent VS Code task is `Arduino: Refresh Compilation Database`. Run it after changing the board/core configuration or when IntelliSense becomes stale. The configured Arduino CLI installation path is Windows-specific and may need adjustment on another computer. Upload remains a separate board/port-specific operation; no upload task is defined.
+The equivalent VS Code task is `Arduino: Refresh Compilation Database`. Run it after changing the board/core configuration or when IntelliSense becomes stale. The configured Arduino CLI installation path is Windows-specific and may need adjustment on another computer.
+
+### Upload over the micro:bit USB connection
+
+Connect the BBC micro:bit V2 directly by USB and close any serial monitor currently using its COM port. Find the assigned port with:
+
+```powershell
+arduino-cli board list
+```
+
+Run **Terminal > Run Task > Arduino: Compile and Upload** in VS Code and enter that port when prompted, for example `COM3`. The task compiles with warnings enabled and immediately uploads the resulting image. The equivalent terminal command is:
+
+```powershell
+arduino-cli compile --fqbn sandeepmistry:nRF5:BBCmicrobitV2 --warnings all --upload --port COM3 .
+```
+
+Replace `COM3` with the port shown on the local computer. The task's `COM3` value is only a prompt default and is not stored as the selected device.
+
+The micro:bit's DAPLink USB interface exposes several endpoints. The CDC endpoint appears as the COM port and carries the sketch's serial console. The Sandeep Mistry board recipe actually flashes through the CMSIS-DAP HID endpoint with OpenOCD, not through a serial bootloader. Both endpoints belong to the same USB-connected board; the port argument lets Arduino CLI identify the intended board. Uploading resets the target, so reopen the serial monitor afterward at 9600 baud. If `arduino-cli board list` shows no board, check the USB data cable, normal `MICROBIT` mode, Windows Device Manager, and the board's DAPLink firmware.
 
 Arduino CLI records the generated `.build/sketch/ArduinoBBCMicroBitV2RTC.ino.cpp` in the compilation database rather than the source `.ino`. The C/C++ extension therefore uses the Arduino-generated `.vscode/c_cpp_properties.json` fallback for the open sketch. Run `Arduino: Rebuild IntelliSense Configuration` (`Ctrl+Alt+I`) after changing the board or installed libraries. That machine-specific file is intentionally ignored by Git.
 
@@ -243,6 +261,7 @@ An Arduino CLI compile is the authoritative static build check for this `.ino` s
 - [Arduino software downloads (Arduino IDE 2)](https://www.arduino.cc/en/software)
 - [Arduino CLI installation](https://arduino.github.io/arduino-cli/latest/installation/)
 - [Sandeep Mistry Arduino nRF5 core and board installation](https://github.com/sandeepmistry/arduino-nRF5#installing)
+- [micro:bit DAPLink USB interface](https://tech.microbit.org/software/daplink-interface/)
 - [BBC micro:bit edge connector and external I2C pins](https://tech.microbit.org/hardware/edgeconnector/)
 - [BBC micro:bit V2 schematics and pin map](https://tech.microbit.org/hardware/schematic/)
 - [BBC micro:bit power-supply guidance](https://tech.microbit.org/hardware/powersupply/)
