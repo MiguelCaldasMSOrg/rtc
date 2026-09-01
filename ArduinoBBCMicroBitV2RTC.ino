@@ -18,10 +18,14 @@
  * ALARMS  (INT/SQW pulls LOW when an alarm fires; it is open-drain)
  *   A1 HH:MM:SS             alarm 1, daily at that time
  *   A1 DD HH:MM:SS          alarm 1, on that day-of-month
+ *   A1 DOW d HH:MM:SS       alarm 1, on weekday d (1=Sun ... 7=Sat)
+ *   A1 MIN mm:ss            alarm 1, every hour at minute:second
  *   A1 SEC ss               alarm 1, every minute when seconds == ss
  *   A1 EVERY                alarm 1, once per second
  *   A2 HH:MM                alarm 2, daily at that time
  *   A2 DD HH:MM             alarm 2, on that day-of-month
+ *   A2 DOW d HH:MM          alarm 2, on weekday d (1=Sun ... 7=Sat)
+ *   A2 MIN mm               alarm 2, every hour at minute mm (:00 seconds)
  *   A2 EVERY                alarm 2, once per minute (at :00)
  *   AOFF 1 | AOFF 2         disable an alarm
  *   AS                      show alarm settings + flags
@@ -61,10 +65,10 @@ struct Tm {
 };
 
 enum A1Mode {
-  A1_EVERY_SEC, A1_MATCH_SEC, A1_MATCH_HMS, A1_MATCH_DATE_HMS
+  A1_EVERY_SEC, A1_MATCH_SEC, A1_MATCH_MS, A1_MATCH_HMS, A1_MATCH_DATE_HMS, A1_MATCH_DAY_HMS
 };
 enum A2Mode {
-  A2_EVERY_MIN, A2_MATCH_HM, A2_MATCH_DATE_HM
+  A2_EVERY_MIN, A2_MATCH_MIN, A2_MATCH_HM, A2_MATCH_DATE_HM, A2_MATCH_DAY_HM
 };
 
 /* ================= configuration ================= */
@@ -248,11 +252,18 @@ bool setAlarm1(A1Mode mode, uint8_t day, uint8_t hh, uint8_t mm, uint8_t ss) {
       b[2] |= 0x80;
       b[3] |= 0x80;
       break;
+    case A1_MATCH_MS:
+      b[2] |= 0x80;
+      b[3] |= 0x80;
+      break;
     case A1_MATCH_HMS:
       b[3] |= 0x80;
       break;
     case A1_MATCH_DATE_HMS:
       break;  // no mask bits set
+    case A1_MATCH_DAY_HMS:
+      b[3] |= 0x40;
+      break;
   }
   if (!rtcWrite(REG_A1, b, 4)) {
     return false;
@@ -276,10 +287,17 @@ bool setAlarm2(A2Mode mode, uint8_t day, uint8_t hh, uint8_t mm) {
       b[1] |= 0x80;
       b[2] |= 0x80;
       break;
+    case A2_MATCH_MIN:
+      b[1] |= 0x80;
+      b[2] |= 0x80;
+      break;
     case A2_MATCH_HM:
       b[2] |= 0x80;
       break;
     case A2_MATCH_DATE_HM:
+      break;
+    case A2_MATCH_DAY_HM:
+      b[2] |= 0x40;
       break;
   }
   if (!rtcWrite(REG_A2, b, 3)) {
@@ -481,7 +499,7 @@ void printAlarmStatus() {
 
   Serial.print(F("  A1 "));
   Serial.print((c & CTRL_A1IE) ? F("ENABLED ") : F("disabled"));
-  Serial.print(F("  date="));
+  Serial.print((a1[3] & 0x40) ? F("  weekday=") : F("  date="));
   Serial.print(bcd2dec(a1[3] & 0x3F));
   Serial.print(F(" "));
   print2(bcd2dec(a1[2] & 0x3F));
@@ -499,7 +517,7 @@ void printAlarmStatus() {
 
   Serial.print(F("  A2 "));
   Serial.print((c & CTRL_A2IE) ? F("ENABLED ") : F("disabled"));
-  Serial.print(F("  date="));
+  Serial.print((a2[2] & 0x40) ? F("  weekday=") : F("  date="));
   Serial.print(bcd2dec(a2[2] & 0x3F));
   Serial.print(F(" "));
   print2(bcd2dec(a2[1] & 0x3F));
@@ -578,9 +596,12 @@ void help() {
   Serial.println(F("-- alarms --"));
   Serial.println(F("  A1 HH:MM:SS             daily"));
   Serial.println(F("  A1 DD HH:MM:SS          monthly on day DD"));
+  Serial.println(F("  A1 DOW d HH:MM:SS       weekly, 1=Sun ... 7=Sat"));
+  Serial.println(F("  A1 MIN mm:ss            hourly"));
   Serial.println(F("  A1 SEC ss               every minute at second ss"));
   Serial.println(F("  A1 EVERY                once per second"));
-  Serial.println(F("  A2 HH:MM | A2 DD HH:MM | A2 EVERY"));
+  Serial.println(F("  A2 HH:MM | A2 DD HH:MM | A2 DOW d HH:MM"));
+  Serial.println(F("  A2 MIN mm | A2 EVERY"));
   Serial.println(F("  AOFF 1|2                disable alarm"));
   Serial.println(F("  AS                      show alarm settings"));
   Serial.println(F("  SQ off|1|1024|4096|8192 square-wave output"));
@@ -663,6 +684,44 @@ void cmdAlarm1(const char *arg) {
     Serial.println(a);
     return;
   }
+  if (strncasecmp(arg, "MIN", 3) == 0) {
+    if (sscanf(arg + 3, " %d:%d", &a, &b) != 2 || a < 0 || a > 59 || b < 0 || b > 59) {
+      Serial.println(F("Use: A1 MIN mm:ss"));
+      return;
+    }
+    if (!setAlarm1(A1_MATCH_MS, 1, 0, (uint8_t)a, (uint8_t)b)) {
+      Serial.println(F("A1 write failed."));
+      return;
+    }
+    alarmFlag = true;
+    Serial.print(F("A1: every hour at minute:second "));
+    print2(a);
+    Serial.print(':');
+    print2(b);
+    Serial.println();
+    return;
+  }
+  if (strncasecmp(arg, "DOW", 3) == 0) {
+    if (sscanf(arg + 3, " %d %d:%d:%d", &a, &b, &c, &d) != 4 || a < 1 || a > 7 || b < 0 || b > 23 || c < 0 || c > 59 || d < 0 || d > 59) {
+      Serial.println(F("Use: A1 DOW d HH:MM:SS   (d=1..7, Sunday=1)"));
+      return;
+    }
+    if (!setAlarm1(A1_MATCH_DAY_HMS, (uint8_t)a, (uint8_t)b, (uint8_t)c, (uint8_t)d)) {
+      Serial.println(F("A1 write failed."));
+      return;
+    }
+    alarmFlag = true;
+    Serial.print(F("A1: weekday "));
+    Serial.print(a);
+    Serial.print(F(" at "));
+    print2(b);
+    Serial.print(':');
+    print2(c);
+    Serial.print(':');
+    print2(d);
+    Serial.println();
+    return;
+  }
   if (sscanf(arg, "%d %d:%d:%d", &a, &b, &c, &d) == 4) {
     // DD HH:MM:SS
     if (a < 1 || a > 31 || b < 0 || b > 23 || c < 0 || c > 59 || d < 0 || d > 59) {
@@ -705,7 +764,7 @@ void cmdAlarm1(const char *arg) {
     Serial.println();
     return;
   }
-  Serial.println(F("Use: A1 HH:MM:SS | A1 DD HH:MM:SS | A1 SEC ss | A1 EVERY"));
+  Serial.println(F("Use: A1 HH:MM:SS | DD HH:MM:SS | DOW d HH:MM:SS | MIN mm:ss | SEC ss | EVERY"));
 }
 
 void cmdAlarm2(const char *arg) {
@@ -718,6 +777,40 @@ void cmdAlarm2(const char *arg) {
     }
     alarmFlag = true;
     Serial.println(F("A2: fires once per minute at :00."));
+    return;
+  }
+  if (strncasecmp(arg, "MIN", 3) == 0) {
+    if (sscanf(arg + 3, " %d", &a) != 1 || a < 0 || a > 59) {
+      Serial.println(F("Use: A2 MIN mm"));
+      return;
+    }
+    if (!setAlarm2(A2_MATCH_MIN, 1, 0, (uint8_t)a)) {
+      Serial.println(F("A2 write failed."));
+      return;
+    }
+    alarmFlag = true;
+    Serial.print(F("A2: every hour at minute "));
+    print2(a);
+    Serial.println(F(":00."));
+    return;
+  }
+  if (strncasecmp(arg, "DOW", 3) == 0) {
+    if (sscanf(arg + 3, " %d %d:%d", &a, &b, &c) != 3 || a < 1 || a > 7 || b < 0 || b > 23 || c < 0 || c > 59) {
+      Serial.println(F("Use: A2 DOW d HH:MM   (d=1..7, Sunday=1)"));
+      return;
+    }
+    if (!setAlarm2(A2_MATCH_DAY_HM, (uint8_t)a, (uint8_t)b, (uint8_t)c)) {
+      Serial.println(F("A2 write failed."));
+      return;
+    }
+    alarmFlag = true;
+    Serial.print(F("A2: weekday "));
+    Serial.print(a);
+    Serial.print(F(" at "));
+    print2(b);
+    Serial.print(':');
+    print2(c);
+    Serial.println();
     return;
   }
   if (sscanf(arg, "%d %d:%d", &a, &b, &c) == 3) {
@@ -758,7 +851,7 @@ void cmdAlarm2(const char *arg) {
     Serial.println();
     return;
   }
-  Serial.println(F("Use: A2 HH:MM | A2 DD HH:MM | A2 EVERY"));
+  Serial.println(F("Use: A2 HH:MM | DD HH:MM | DOW d HH:MM | MIN mm | EVERY"));
 }
 
 void cmdSquareWave(const char *arg) {

@@ -60,7 +60,7 @@ Important details:
 - `setup()` checks for an already-pending alarm flag because a line that was low before the interrupt was attached would not generate a new falling edge.
 - `SQ 1`, `SQ 1024`, `SQ 4096`, or `SQ 8192` repurposes the same pin as a square-wave output. Alarm flags may still be set, but alarms cannot signal P2 in square-wave mode.
 - `SQ off` returns the pin to alarm mode; it does not enable or disable either alarm. Use `AOFF 1` or `AOFF 2` to disable an alarm. Mode-changing commands schedule a status check so an alarm that was already pending in square-wave mode is not missed.
-- Date-based alarms repeat monthly; they are not one-shot. Days 29–31 do not occur in every month, so use days 1–28 when the alarm must fire every month. Alarm 2 has one-minute resolution and matches at second `00`.
+- Date-based alarms repeat monthly; they are not one-shot. Days 29–31 do not occur in every month, so use days 1–28 when the alarm must fire every month. Weekday-based alarms repeat weekly, using 1=Sunday through 7=Saturday. Alarm 2 has one-minute resolution and matches at second `00`.
 - The backup cell keeps the RTC time when normal power is absent, but it does not power the micro:bit. Do not rely on it to wake an unpowered micro:bit without a separately designed and tested power circuit.
 
 ### Voltage and backup-cell safety
@@ -154,9 +154,13 @@ Commands are limited to 71 characters. An overlong command is rejected rather th
 | Time | `R` / `C` / `D` | Read once / continuously / read temperature |
 | Alarm 1 | `A1 HH:MM:SS` | Fire daily at the given time |
 | Alarm 1 | `A1 DD HH:MM:SS` | Fire monthly on day `DD` |
-| Alarm 1 | `A1 SEC ss` / `A1 EVERY` | Match seconds each minute / fire every second |
+| Alarm 1 | `A1 DOW d HH:MM:SS` | Fire weekly on weekday `d` (1=Sunday through 7=Saturday) |
+| Alarm 1 | `A1 MIN mm:ss` | Fire hourly at the given minute and second |
+| Alarm 1 | `A1 SEC ss` / `A1 EVERY` | Fire each minute at second `ss` / fire every second |
 | Alarm 2 | `A2 HH:MM` | Fire daily at the given minute |
-| Alarm 2 | `A2 DD HH:MM` / `A2 EVERY` | Fire monthly / fire every minute at `:00` |
+| Alarm 2 | `A2 DD HH:MM` | Fire monthly on day `DD` |
+| Alarm 2 | `A2 DOW d HH:MM` | Fire weekly on weekday `d` (1=Sunday through 7=Saturday) |
+| Alarm 2 | `A2 MIN mm` / `A2 EVERY` | Fire hourly at minute `mm` / fire every minute at `:00` |
 | Alarms | `AOFF 1` / `AOFF 2` / `AS` | Disable an alarm / show alarm state |
 | Output | `SQ off\|1\|1024\|4096\|8192` | Select alarm mode or a square-wave rate |
 | EEPROM | `EW addr text...` | Write a NUL-terminated string |
@@ -228,11 +232,15 @@ The alarm mode arguments select which fields are used:
 |---|---|
 | `A1_EVERY_SEC` | None; Alarm 1 fires every second |
 | `A1_MATCH_SEC` | `ss` each minute |
+| `A1_MATCH_MS` | `mm` and `ss` each hour |
 | `A1_MATCH_HMS` | `hh`, `mm`, and `ss` each day |
 | `A1_MATCH_DATE_HMS` | `day`, `hh`, `mm`, and `ss` each month |
+| `A1_MATCH_DAY_HMS` | weekday, `hh`, `mm`, and `ss` each week |
 | `A2_EVERY_MIN` | None; Alarm 2 fires at second `00` each minute |
+| `A2_MATCH_MIN` | `mm` each hour at second `00` |
 | `A2_MATCH_HM` | `hh` and `mm` each day |
 | `A2_MATCH_DATE_HM` | `day`, `hh`, and `mm` each month |
+| `A2_MATCH_DAY_HM` | weekday, `hh`, and `mm` each week |
 
 The alarm setters do not validate their numeric arguments. They perform several I2C operations, so a failure can leave a partially applied configuration. Register reads and read-modify-write operations report transport failures to their callers.
 
